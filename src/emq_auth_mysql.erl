@@ -33,23 +33,38 @@
 init({AuthQuery, SuperQuery, HashType}) ->
     {ok, #state{auth_query = AuthQuery, super_query = SuperQuery, hash_type = HashType}}.
 
-check(#mqtt_client{username = Username}, Password, _State) when ?EMPTY(Username); ?EMPTY(Password) ->
-    {error, username_or_password_undefined};
+%% check(#mqtt_client{username = Username}, Password, _State) when ?EMPTY(Username); ?EMPTY(Password) ->
+%%     {error, username_or_password_undefined};
 
 check(Client, Password, #state{auth_query  = {AuthSql, AuthParams},
                                super_query = SuperQuery,
                                hash_type   = HashType}) ->
-    Result = case query(AuthSql, AuthParams, Client) of
+
+    {Type, ClientId, ClientPid, Username, Peername, CleanSess, ProtoVer, Keepalive, WillTopic, WsInitialHeaders, MountPoint, Time} = Client,
+
+    if 
+        ?EMPTY(Username) -> Username2 = <<"anonymous">>;
+        true -> Username2 = Username
+    end,
+
+    if 
+        ?EMPTY(Password) -> Password2 = <<"empty">>;
+        true -> Password2 = Password
+    end,
+
+    Client2 = {Type, ClientId, ClientPid, Username2, Peername, CleanSess, ProtoVer, Keepalive, WillTopic, WsInitialHeaders, MountPoint, Time},
+
+    Result = case query(AuthSql, AuthParams, Client2) of
                  {ok, [<<"password">>], [[PassHash]]} ->
-                     check_pass(PassHash, Password, HashType);
+                     check_pass(PassHash, Password2, HashType);
                  {ok, [<<"password">>, <<"salt">>], [[PassHash, Salt]]} ->
-                     check_pass(PassHash, Salt, Password, HashType);
+                     check_pass(PassHash, Salt, Password2, HashType);
                  {ok, _Columns, []} ->
                      ignore;
                  {error, Reason} ->
                      {error, Reason}
              end,
-    case Result of ok -> {ok, is_superuser(SuperQuery, Client)}; Error -> Error end.
+    case Result of ok -> {ok, is_superuser(SuperQuery, Client2)}; Error -> Error end.
 
 check_pass(PassHash, Password, HashType) ->
     check_pass(PassHash, hash(HashType, Password)).

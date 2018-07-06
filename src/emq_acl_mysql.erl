@@ -26,6 +26,9 @@
 
 -record(state, {acl_query}).
 
+-define(EMPTY(Username), (Username =:= undefined orelse Username =:= <<>>)).
+
+
 init(AclQuery) ->
     {ok, #state{acl_query = AclQuery}}.
 
@@ -33,12 +36,22 @@ check_acl({#mqtt_client{username = <<$$, _/binary>>}, _PubSub, _Topic}, _State) 
     ignore; 
 
 check_acl({Client, PubSub, Topic}, #state{acl_query   = {AclSql, AclParams}}) ->
-    case emq_auth_mysql_cli:query(AclSql, AclParams, Client) of
+
+    {Type, ClientId, ClientPid, Username, Peername, CleanSess, ProtoVer, Keepalive, WillTopic, WsInitialHeaders, MountPoint, Time} = Client,
+
+    if 
+        ?EMPTY(Username) -> Username2 = <<"anonymous">>;
+        true -> Username2 = Username
+    end,
+
+    Client2 = {Type, ClientId, ClientPid, Username2, Peername, CleanSess, ProtoVer, Keepalive, WillTopic, WsInitialHeaders, MountPoint, Time},
+
+    case emq_auth_mysql_cli:query(AclSql, AclParams, Client2) of
         {ok, _Columns, []} ->
             ignore;
         {ok, _Columns, Rows} ->
             Rules = filter(PubSub, compile(Rows)),
-            case match(Client, Topic, Rules) of
+            case match(Client2, Topic, Rules) of
                 {matched, allow} -> allow;
                 {matched, deny}  -> deny;
                 nomatch          -> ignore
